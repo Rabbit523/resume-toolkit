@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button, Space, Input, Modal, DatePicker, Select, Popconfirm, Typography, Form, Row, Col } from 'antd';
-import { DeleteOutlined, EditOutlined, EyeTwoTone, PlusOutlined } from '@ant-design/icons';
+import { DeleteOutlined, DownloadOutlined, EditOutlined, EyeTwoTone, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
   normalizeSummary,
@@ -17,6 +17,7 @@ import config from '@/services/(routes)/config';
 import { Container, FlexBox, StyledButton, ColorTable, ColorTabs } from '@/_components/layout/client/styled';
 import SortableList from '@/_components/layout/common/SortableList';
 import { CONSTANT_USER_ROLE_ADMIN, DEFAULT_PAGINATION_SIZE, REPORT_OPTIONS } from '@/config/constants';
+const { Paragraph } = Typography;
 
 export default function Applies() {
   const { loginUser } = useGlobalContext();
@@ -34,7 +35,7 @@ export default function Applies() {
   // Individual filter states
   const [dateFilter, setDateFilter] = useState(null);
   const [companyFilter, setCompanyFilter] = useState('');
-  const [profileFilter, setProfileFilter] = useState('');
+  const [profileFilter, setProfileFilter] = useState([]);
   const [desFilter, setDesFilter] = useState('');
   const [debouncedDesFilter, setDebouncedDesFilter] = useState('');
   const [isReportModalOpen, setReportModalOpen] = useState(false);
@@ -51,7 +52,7 @@ export default function Applies() {
       startDate: dateFilter?.start || '',
       endDate: dateFilter?.end || '',
       companyName: companyFilter || '',
-      profileId: profileFilter || '',
+      profileId: profileFilter.join(',') || '',
       description: debouncedDesFilter || ''
     });
 
@@ -179,6 +180,56 @@ export default function Applies() {
       onFilter: () => true
     },
     {
+      title: 'POSITION',
+      dataIndex: 'jobTitle',
+      key: 'jobTitle',
+      render: (_, record) => (
+        <Paragraph
+          editable={{
+            onChange: async (value) => {
+              const trimmed = value.trim();
+              const currentValue = (record.resumeResponse?.target_position || '').trim();
+
+              if (!trimmed) {
+                showToastInfoMsg('Position is required.');
+                return;
+              }
+
+              if (trimmed === currentValue) {
+                return;
+              }
+
+              try {
+                const payload = {
+                  ...record,
+                  jobTitle: trimmed,
+                  resumeResponse: {
+                    ...(record.resumeResponse || {}),
+                    target_position: trimmed
+                  }
+                };
+
+                const res = await resumeService.updateResume(record._id, payload);
+
+                if (res?.error) {
+                  showToastErrorMsg(res.msg || 'Failed to update position.');
+                  return;
+                }
+
+                showToastInfoMsg('Position updated successfully.');
+                mutate();
+              } catch (error) {
+                showToastErrorMsg('Failed to update position.');
+              }
+            }
+          }}
+          style={{ marginBottom: 0 }}
+        >
+          {record.resumeResponse?.target_position || record.jobTitle || 'N/A'}
+        </Paragraph>
+      )
+    },
+    {
       title: 'PROFILE',
       dataIndex: 'associatedProfileId',
       key: 'associatedProfileId',
@@ -189,12 +240,14 @@ export default function Applies() {
       filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
         <Space direction='vertical' style={{ padding: 8 }}>
           <Select
+            mode='multiple'
             allowClear
             showSearch
-            onChange={(value) => setSelectedKeys(value ? [value] : [])}
+            maxTagCount='responsive'
+            placeholder='Select Profiles'
+            onChange={(value) => setSelectedKeys(value?.length ? [value] : [])}
             optionFilterProp='label'
             filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-            placeholder='Select Profile'
             style={{ width: 200 }}
             options={effectiveProfiles.map((p) => ({
               label: p.profileName,
@@ -206,7 +259,7 @@ export default function Applies() {
               size='small'
               onClick={() => {
                 clearFilters();
-                setProfileFilter('');
+                setProfileFilter([]);
                 confirm();
               }}
             >
@@ -216,7 +269,7 @@ export default function Applies() {
               type='primary'
               size='small'
               onClick={() => {
-                setProfileFilter(selectedKeys[0] || '');
+                setProfileFilter(selectedKeys[0] || []);
                 confirm();
               }}
             >
@@ -241,7 +294,7 @@ export default function Applies() {
             </Popconfirm>
           )}
           <StyledButton onClick={() => handleDownload(record)} type='primary'>
-            Download
+            <DownloadOutlined />
           </StyledButton>
         </Space>
       )

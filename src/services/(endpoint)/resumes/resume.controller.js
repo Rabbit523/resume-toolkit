@@ -13,7 +13,6 @@ export async function getResumes({ skip, limit, sortBy, sortOrder, startDate, en
       const start = new Date(startDate);
       const end = new Date(endDate);
 
-      // Ensure endDate covers the full day
       end.setUTCHours(23, 59, 59, 999);
 
       filter.created_at = {
@@ -22,9 +21,8 @@ export async function getResumes({ skip, limit, sortBy, sortOrder, startDate, en
       };
     }
 
-    // Filter by companyName if provided
     if (companyName) {
-      filter.companyName = { $regex: new RegExp(`${companyName}`, 'i') };
+      filter.companyName = { $regex: new RegExp(companyName, 'i') };
     }
 
     if (description) {
@@ -32,14 +30,28 @@ export async function getResumes({ skip, limit, sortBy, sortOrder, startDate, en
     }
 
     const user = await userModel.findById(userId);
+
     if (user.role !== CONSTANT_USER_ROLE_ADMIN) {
-      // filter.associatedUserId = userId;
       filter.associatedProfileId = { $in: user.profiles || [] };
     }
 
-    // Filter by profileId if provided
+    // Multi-profile filter
     if (profileId) {
-      filter.associatedProfileId = profileId;
+      const profileIds = profileId
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+      if (profileIds.length > 0) {
+        if (filter.associatedProfileId?.$in) {
+          // Non-admin users can only query within their own profiles
+          filter.associatedProfileId = {
+            $in: filter.associatedProfileId.$in.filter((id) => profileIds.includes(String(id)))
+          };
+        } else {
+          filter.associatedProfileId = { $in: profileIds };
+        }
+      }
     }
 
     const resumes = await resumeModel
@@ -48,6 +60,7 @@ export async function getResumes({ skip, limit, sortBy, sortOrder, startDate, en
       .skip(skip)
       .limit(limit)
       .lean();
+
     const total = await resumeModel.countDocuments(filter);
 
     return { resumes, total };

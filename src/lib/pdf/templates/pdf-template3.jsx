@@ -269,11 +269,17 @@ export async function generate_template3_pdf(data) {
 
     // TECHNICAL SKILLS SECTION
     if (d.technical_skills && Object.keys(d.technical_skills).length) {
-      pdf.drawSection('Technical Skills', true);
+      const technicalSkills = Object.entries(d.technical_skills)
+        .map(([category, items]) => [category, Array.isArray(items) ? items.filter((item) => item && String(item).trim() !== '') : []])
+        .filter(([_, items]) => items.length > 0);
 
-      Object.entries(d.technical_skills).forEach(([category, items]) => {
-        pdf.drawTextBlock(sanitizeText(`${category}: ${items.join(', ')}`), pdf.style.fontsize.skills, pdf.fonts.regular);
-      });
+      if (technicalSkills.length > 0) {
+        pdf.drawSection('Technical Skills', true);
+
+        technicalSkills.forEach(([category, items]) => {
+          pdf.drawTextBlock(sanitizeText(`${category}: ${items.join(', ')}`), pdf.style.fontsize.skills, pdf.fonts.regular);
+        });
+      }
     }
   });
 }

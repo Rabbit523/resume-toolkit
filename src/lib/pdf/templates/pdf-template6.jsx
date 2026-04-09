@@ -213,7 +213,7 @@ export async function generate_template6_pdf(data) {
       font: pdf.fonts.bold
     });
     pdf.offsetY(22);
-    const title = sanitizeText(d.target_position || d.professional_title || '');
+    const title = sanitizeText(d.target_position);
     pdf.page.drawText(sanitizeText(title), {
       x: leftX,
       y: pdf.getY(),

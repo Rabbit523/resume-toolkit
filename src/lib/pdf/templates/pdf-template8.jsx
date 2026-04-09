@@ -5,11 +5,35 @@ import { sanitizeText, formatMonthYear } from '@/helpers/endpoint';
 const BASE =
   process.env.NEXT_PUBLIC_BASE_DOMAIN || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
+function formatLinkedIn(value) {
+  if (!value) return '';
+
+  const clean = sanitizeText(value).trim();
+
+  try {
+    const normalized = clean.startsWith('http') ? clean : `https://${clean}`;
+    const url = new URL(normalized);
+
+    // show shorter text instead of full URL
+    return url.hostname.replace(/^www\./, '') + url.pathname.replace(/\/$/, '');
+  } catch {
+    return clean
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/\/$/, '');
+  }
+}
+
+function joinContact(d) {
+  const parts = [d.mobile, d.email, d.address, formatLinkedIn(d.linkedin)].filter(Boolean).map((v) => sanitizeText(v));
+  return parts.join('  |  ');
+}
+
 export async function generate_template8_pdf(data) {
   const engine = new ResumePDFEngine({
     fontsize: {
       name: 20,
-      contact: 10,
+      contact: 11,
       section: 12,
       title: 11,
       normal: 10,
@@ -72,26 +96,34 @@ export async function generate_template8_pdf(data) {
 
     pdf.page.drawRectangle({
       x: 0,
-      y: pdf.getY() - 20,
+      y: pdf.getY() - 30,
       width: pdf.getWidth(),
-      height: 30,
+      height: 40,
       color: pdf.style.colors.headerBg
     });
 
-    const contact = sanitizeText([d.address, d.mobile, d.email, d.linkedin || null].filter(Boolean).join(' | '));
+    let y = pdf.getY() - 8;
+    const contact = joinContact(d);
 
     if (contact) {
-      pdf.page.drawText(contact, {
-        x: pdf.style.margin.x,
-        y: pdf.getY() - 9,
-        size: pdf.style.fontsize.contact,
-        font: pdf.fonts.bold,
-        color: pdf.style.colors.contact
-      });
+      const contentWidth = pdf.getWidth() - pdf.style.margin.x * 2;
 
-      pdf.offsetY(45);
+      const lines = pdf.wrap(contact, pdf.fonts.bold, pdf.style.fontsize.contact, contentWidth);
+
+      lines.forEach((line) => {
+        pdf.page.drawText(line, {
+          x: pdf.style.margin.x,
+          y,
+          size: pdf.style.fontsize.contact,
+          font: pdf.fonts.regular,
+          color: pdf.style.colors.contact
+        });
+
+        y -= pdf.style.lineHeight;
+      });
     }
 
+    pdf.offsetY(50);
     /* ----------------------------- */
     /* SECTION DRAWER */
     /* ----------------------------- */

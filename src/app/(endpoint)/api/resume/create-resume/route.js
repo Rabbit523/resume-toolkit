@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { formatPhoneNumber } from '@/helpers/common';
-import { sanitizeText, formatASCIIPart, buildResumeFilename, sendError } from '@/helpers/endpoint';
+import { sanitizeText, formatASCIIPart, buildResumeFilename, sendError, sanitizeJobDescription } from '@/helpers/endpoint';
 import OpenAI from 'openai';
 import profileModel from '@/models/profile.model';
 import dbConnect from '@/mongodb';
@@ -15,13 +15,14 @@ import { generate_template5_pdf } from '@/lib/pdf/templates/pdf-template5';
 import { generate_template6_pdf } from '@/lib/pdf/templates/pdf-template6';
 import { generate_template7_pdf } from '@/lib/pdf/templates/pdf-template7';
 import { generate_template8_pdf } from '@/lib/pdf/templates/pdf-template8';
+import { generate_template9_pdf } from '@/lib/pdf/templates/pdf-template9';
 import { resumeValidCheck } from '@/lib/resumeValidCheck';
 
 export const POST = async (req) => {
   try {
     await dbConnect();
 
-    const { profileId, desc, url, userId, companyName, position } = await req.json();
+    const { profileId, desc, url, userId, companyName, position, resumeType } = await req.json();
 
     const { exists } = await resumeValidCheck(profileId, url, desc, companyName, position);
     if (exists) {
@@ -30,7 +31,7 @@ export const POST = async (req) => {
 
     const profile = await profileModel.findById(profileId);
     const profileTemplate = profile?.profileTemplate || 'template1';
-    const completion = await generateResume(profile.profileWorkExperience, desc, profileTemplate);
+    const completion = await generateResume(profile.profileWorkExperience, desc, profileTemplate, resumeType);
 
     const addr = profile.profileAddress;
     const address =
@@ -59,7 +60,7 @@ export const POST = async (req) => {
       jobLink: url,
       jobDescription: desc,
       resumeResponse: completion,
-      resumeBuiltModel: 'gpt-4.1-nano',
+      resumeBuiltModel: 'gpt-5-nano', //'gpt-4.1-nano',
       resumeFileName: resume_name,
       associatedUserId: userId,
       associatedProfileId: profileId
@@ -84,6 +85,8 @@ export const POST = async (req) => {
       pdfBytes = await generate_template7_pdf(r);
     } else if (profileTemplate === 'template8') {
       pdfBytes = await generate_template8_pdf(r);
+    } else if (profileTemplate === 'template9') {
+      pdfBytes = await generate_template9_pdf(r);
     } else {
       pdfBytes = await generate_template1_pdf(r);
     }
@@ -99,144 +102,6 @@ export const POST = async (req) => {
     console.log(error);
     return sendError(Response, { msg: error?.message || 'Unknown error' });
   }
-};
-
-const prepareResumePrompt_0 = (experienceDetails, jobDescription) => {
-  let experiences = '';
-  experienceDetails.map((experience) => {
-    experiences += `${experience.jobTitle} at ${experience.employer} (${experience.startDate} - ${experience.endDate})`;
-    experiences += `\n`;
-  });
-
-  return `Act as a senior US-based technical recruiter and hiring manager
-specializing in the EXACT target position described in the job description.
-
-You must adapt tone, bullet emphasis, technical depth, and impact metrics
-specifically for this target role (not generic software engineering).
-
----------------------
-GLOBAL RULES (STRICT)
----------------------
-- Write in American English.
-- Optimize for US recruiters and ATS systems (Greenhouse, Lever, Workday).
-- Assume recruiters spend 6–10 seconds per resume.
-- Prioritize relevance to the TARGET POSITION over general experience.
-- Avoid vague language (“worked on”, “assisted”, “responsible for”).
-- Do NOT inflate seniority or fabricate experience.
-- Output VALID JSON ONLY.
-
----------------------
-0) TARGET POSITION ANALYSIS (INTERNAL)
----------------------
-Before generating content, internally infer:
-- Role type (Backend / Frontend / Full-Stack / Platform / Infra / Data)
-- Seniority level (Junior / Mid / Senior / Staff / Lead)
-- Core evaluation signals recruiters expect for THIS role
-- Key technologies and systems emphasized in the job description
-
-Use this analysis to guide ALL sections below.
-
----------------------
-1) POSITION-ALIGNED WORK EXPERIENCE
----------------------
-For EACH role, generate:
-
-- company_name
-- company_location (city, state, US if applicable)
-- job_title
-- start_date_employment
-- end_date_employment
-- achievements (4–6 bullets ONLY; max 7 for senior+ roles)
-
-ACHIEVEMENT BULLET RULES (MANDATORY):
-Each bullet MUST:
-- Start with a strong role-appropriate action verb
-- Describe a concrete system, feature, or technical outcome
-- Align directly with expectations of the TARGET POSITION
-- Mention technologies ONLY if relevant to this role
-- Include scope or impact where possible:
-  (users, scale, latency, reliability, cost, revenue, developer velocity)
-
-ROLE-SPECIFIC EMPHASIS:
-- Backend roles → APIs, data models, performance, scalability, reliability
-- Frontend roles → UX, performance, accessibility, state management
-- Full-Stack roles → end-to-end ownership, architecture, integration
-- Platform/Infra roles → CI/CD, cloud, observability, cost, reliability
-- Senior+ roles → system design, ownership, mentoring, cross-team impact
-
-DISALLOWED:
-- Generic responsibility lists
-- Tool dumping
-- Multiple sentences per bullet
-- Repeating the same achievement across roles
-
----------------------
-2) POSITION-TARGETED PROFESSIONAL SUMMARY
----------------------
-Write a 4–5 line professional summary that:
-- Explicitly positions the candidate as a fit for the TARGET POSITION
-- States role identity (e.g., “Senior Backend Software Engineer”)
-- Highlights 3–4 core strengths required for this role
-- Includes 1 system-level or business-level impact
-- Sounds natural to a US hiring manager (not marketing copy)
-
----------------------
-3) POSITION-PRIORITIZED TECHNICAL SKILLS
----------------------
-Generate a technical skills section that:
-- Is ordered by importance to the TARGET POSITION
-- Is strictly derived from the job description + experience
-- Contains ~25–40 skills total
-- Excludes irrelevant, outdated, or junior-level tools
-
-Two-level depth only. Example:
-
-{
-  "Languages": [],
-  "Backend": [],
-  "Frontend": [],
-  "Databases": [],
-  "Cloud & DevOps": []
-}
-
-Do NOT include categories that are not relevant to the target role.
-
----------------------
-4) TARGET ROLE EXTRACTION
----------------------
-From the job description, extract:
-- target_company_name
-- target_position
-
----------------------
-OUTPUT FORMAT (JSON ONLY)
----------------------
-{
-  "work_experiences": [
-    {
-      "job_title": "",
-      "company_name": "",
-      "company_location": "",
-      "start_date_employment": "",
-      "end_date_employment": "",
-      "achievements": []
-    }
-  ],
-  "summary": "",
-  "technical_skills": {},
-  "target_company_name": "",
-  "target_position": ""
-}
-
----------------------
-INPUT DATA
----------------------
-Work Experience:
-${experiences}
-
-Job Description:
-${jobDescription}
-`;
 };
 
 const prepareResumePrompt = (experienceDetails, jobDescription) => {
@@ -255,6 +120,7 @@ Must proactively REPLACE, REPHRASE, and ADD bullet points under each Experience 
 Do NOT leave any Experience section or bullet point unchanged if it could better reflect or incorporate keywords, duties, or requirements from the JD.
 Acceptable and encouraged to write NEW bullet points where there are relevant experiences (even if not previously mentioned).
 Prioritize jobs/roles closest to the desired job.
+DO NOT USE THE BUZZWORDS, VAGUE PHRASES, OR robotic phrasing commonly found in AI-generated resumes. Make it sound like a real senior engineer wrote it.
 Please write all documents like human is saying and writing, not like AI.
 
 ### Main objectives:
@@ -274,22 +140,9 @@ Please write all documents like human is saying and writing, not like AI.
 14. Preserve all original quantified metrics (numbers, percentages, etc) and actively introduce additional quantification in new or reworded bullets wherever possible. Use measurable outcomes, frequency, scope, or scale to increase the impact of each responsibility or accomplishment. Strive for at least 75% of all Experience bullet points to include a number, percentage, range, or scale to strengthen ATS, recruiter, and hiring manager perception.
 15. Strictly maximize verb variety: No action verb (e.g., developed, led, built, designed, implemented, improved, created, managed, engineered, delivered, optimized, automated, collaborated, mentored) may appear more than twice in the entire document, and never in adjacent or back-to-back bullet points within or across jobs. Each bullet must start with a unique, action-oriented verb whenever possible.
 16. In all Experience bullets, prefer keywords and phrasing directly from the JD where it truthfully reflects the candidate’s background and would boost ATS/recruiter relevance.
-17. Generate an ATS-friendly professional title based on the target position from the job description and the candidate’s most recent role seniority.
-18. Rules for professional title generation:
-   - Never downgrade seniority.
-   - Preserve the job family from the target position.
-   - If the candidate’s seniority is higher than the target position, combine the candidate’s seniority with the target job family.
-   - Keep the title concise, standard, and recruiter-friendly.
-   - Do not invent a different discipline outside the target_position job family.
-
-Example:
-Candidate most recent role: Senior Software Engineer
-Target position: Full Stack Developer
-Result: Senior Full Stack Developer
 
 ### Output
 {
-  "professional_title": "",
   "work_experiences": [{"job_title": "","company_name": "","start_date_employment": "","end_date_employment": "","achievements": []}],
   "summary": [],
   "technical_skills": {
@@ -304,618 +157,6 @@ Result: Senior Full Stack Developer
 ${experiences}
 
 ### Here is the job description:
-${jobDescription}
-`;
-};
-
-const prepareResumePrompt_2 = (experienceDetails, jobDescription) => {
-  let experiences = '';
-  experienceDetails.map((experience) => {
-    experiences += `${experience.jobTitle} at ${experience.employer} (${experience.startDate} - ${experience.endDate})\n`;
-  });
-  return `
-Act as a senior US-based technical recruiter AND ATS optimization specialist hiring specifically for the EXACT role described in the job description.
-
-You are optimizing for:
-1) Human hiring managers
-2) ATS keyword scanning systems
-3) Semantic relevance scoring
-
----------------------------------------------------------
-STEP 1 — STRICT KEYWORD EXTRACTION
----------------------------------------------------------
-From the job description:
-- Extract ALL required technical keywords
-- Extract ALL architectural keywords
-- Extract ALL compliance/security keywords
-- Extract ALL cloud/infrastructure keywords
-- Extract ALL soft leadership keywords
-
-These MUST be embedded verbatim (exact phrase match) throughout the resume.
-
----------------------------------------------------------
-STEP 2 — GENERATE PROFESSIONAL TITLE (HEADER)
----------------------------------------------------------
-
-OBJECTIVE:
-Generate an ATS-friendly professional title that aligns with BOTH:
-1) The extracted target_position
-2) The candidate’s most recent role seniority
-
-CRITICAL LOGIC RULES:
-
-1. Seniority Protection Rule (MANDATORY)
-   - Determine the candidate’s highest or most recent seniority level from work_experiences.
-   - If the candidate’s most recent role is MORE senior than the target_position,
-     DO NOT downgrade the professional_title.
-   - Never reduce Senior → Mid-Level → Junior.
-
-2. Alignment Rule
-   - The professional_title must stay within the same job family as target_position.
-   - Do NOT introduce new domains (Cloud, Platform, Security, Infrastructure, Backend, etc.)
-     unless explicitly present in target_position.
-
-3. Seniority Resolution Matrix:
-
-   CASE A:
-   If candidate seniority == target_position seniority
-   → Use target_position unchanged.
-
-   CASE B:
-   If candidate seniority > target_position seniority
-   → Use candidate seniority + target job family.
-   Example:
-     Candidate: Senior Software Engineer
-     Target: Mid-Level Full Stack Developer
-     Result: Senior Full Stack Developer
-
-   CASE C:
-   If candidate seniority < target_position seniority
-   → Use target_position unchanged.
-
-4. Preserve the core job family exactly.
-   If target_position says "Full Stack Developer",
-   the title must contain "Full Stack Developer".
-
-5. Allowed minor refinements:
-   - Reorder wording for clarity.
-   - Replace hyphen with parentheses.
-   - Remove internal company codes.
-
-6. Absolutely DO NOT:
-   - Add new technology domains.
-   - Add cloud/platform/security unless explicitly present.
-   - Invent architectural scope.
-
-Return:
-"professional_title": ""
-
----------------------------------------------------------
-STEP 3 — POSITION-ALIGNED WORK EXPERIENCE GENERATION
----------------------------------------------------------
-
-OBJECTIVE:
-Rewrite EACH provided role into a job-aligned, high-impact work experience section.
-
----------------------------------------------------------
-PRIORITY ORDER (Highest → Lowest)
----------------------------------------------------------
-
-1. Chronological integrity
-2. Structural correctness
-3. Role alignment with target job
-4. Quantified impact
-5. Tone refinement
-
-If any rule conflicts, follow this priority order.
-
----------------------------------------------------------
-PHASE 1 — JOB ANALYSIS (INTERNAL)
----------------------------------------------------------
-
-Before writing:
-
-Extract:
-1) Core technologies
-2) Architecture expectations
-3) Product type
-4) Business priorities
-5) Seniority level
-
-Reinterpret each past role through that lens,
-without fabricating experience outside its timeline.
-
----------------------------------------------------------
-PHASE 2 — OUTPUT STRUCTURE (STRICT JSON)
----------------------------------------------------------
-
-Return:
-
-{
-  "work_experiences": [
-    {
-      "company_name": "",
-      "company_location": "City, State, Country",
-      "job_title": "",
-      "start_date_employment": "",
-      "end_date_employment": "",
-      "achievements": []
-    }
-  ]
-}
-
----------------------------------------------------------
-STRUCTURAL ENFORCEMENT
----------------------------------------------------------
-
-• Preserve role count exactly.
-• Preserve company names exactly.
-• Preserve employment dates exactly.
-• Do NOT merge or omit roles.
-• Only rewrite achievements.
-
----------------------------------------------------------
-ACHIEVEMENT RULES
----------------------------------------------------------
-
-For EACH role:
-
-• Target 8 bullets per role.
-• Maintain quality over quantity.
-• Do not fabricate scope to reach 8.
-• 250–300 characters per bullet
-• ONE sentence per bullet
-• Start with a strong, varied action verb
-• Each bullet must include:
-    - A concrete system or initiative
-    - Technical approach
-    - Measurable OR observable impact
-
----------------------------------------------------------
-QUANTIFICATION RULE
----------------------------------------------------------
-
-• At least ONE bullet per role MUST contain a quantified metric.
-• Prefer percentage (e.g., improved load time by 28%).
-• If not appropriate, use scale-based numbers (e.g., supported 40k+ users).
-• Do NOT fabricate unrealistic metrics.
-• Do NOT force metrics into every bullet.
-
----------------------------------------------------------
-VERSION & TEMPORAL CONTROL (STRICT)
----------------------------------------------------------
-
-1. A specific version number (e.g., Angular 21) may ONLY appear in roles
-   whose employment dates overlap with or occur after that version’s release year.
-
-2. If a role predates the version release:
-   - Do NOT mention that version.
-   - Do NOT mention upgrading to that version.
-   - Do NOT imply migration to that version.
-   - Do NOT reference architecture tied specifically to that version.
-
-3. For older roles:
-   - Refer to “modern Angular versions available at the time”
-   - Or describe architectural readiness
-   - Or describe standalone-aligned patterns without version naming
-
-Version integrity overrides keyword embedding.
-
----------------------------------------------------------
-ALIGNMENT RULE
----------------------------------------------------------
-
-• Mention technologies ONLY if:
-    - They appear in the job description
-    - They were realistically usable during that role
-
-• Do NOT inject unrelated architecture (cloud, distributed systems, etc.)
-  unless clearly required in the job description.
-
----------------------------------------------------------
-DISALLOWED
----------------------------------------------------------
-
-❌ Generic responsibility lists  
-❌ Tool stacking  
-❌ Repeating sentence patterns  
-❌ Buzzword stuffing  
-❌ Multiple sentences per bullet  
-❌ Future-version leakage  
-
----------------------------------------------------------
-FINAL VALIDATION
----------------------------------------------------------
-
-Before output, confirm:
-
-✓ Role count matches input  
-✓ No future technology versions in past roles  
-✓ Dates unchanged  
-✓ Companies unchanged  
-✓ At least one quantified bullet per role  
-✓ Bullets reflect job priorities  
-✓ No fabricated architecture claims  
-
-Return final JSON only.
-
----------------------------------------------------------
-STEP 4 — SUMMARY SECTION
----------------------------------------------------------
-Create a 5-7 bullet executive summary that:
-- Clearly states 8+ years of full-stack development experience
-- Mentions service-oriented architectures and distributed systems
-- Mentions Python, relational databases, AWS
-- Mentions data-intensive applications
-- Mentions reliability engineering and security best practices
-- Mentions mentoring engineers
-- Mentions performance optimization
-
----------------------------------------------------------
-STEP 5 — TECHNICAL SKILLS SECTION
----------------------------------------------------------
-Categorize skills with TWO-LEVEL DEPTH:
-
-{
-  "Programming Languages": [],
-  "Cloud & Infrastructure": [],
-  "Architecture & Design": [],
-  "Data & Databases": [],
-  "DevOps & Reliability": [],
-  "Security & Compliance": [],
-  "Leadership": []
-}
-
-Rules:
-- Include ALL keywords from job description.
-- Do not omit required technologies.
-- Use exact phrasing from job description.
-
----------------------------------------------------------
-STEP 6 — TARGET INFORMATION
----------------------------------------------------------
-Extract from job description:
-{
-  "target_company_name": "",
-  "target_position": ""
-}
-
----------------------------------------------------------
-OUTPUT FORMAT (JSON ONLY)
----------------------------------------------------------
-{
-"work_experiences": [
-  {
-    "job_title": "",
-    "company_name": "",
-    "start_date_employment": "",
-    "end_date_employment": "",
-    "achievements": []
-  }
-],
-"summary": [],
-"technical_skills": {},
-"target_company_name": "",
-"target_position": "",
-"professional_title": "",
-}
-
-### Here is my work experience:
-${experiences}
-
-### Here is the job description:
-${jobDescription}
-`;
-};
-
-const prepareResumePrompt_1 = (experienceDetails, jobDescription) => {
-  let experiences = '';
-  experienceDetails.map((experience) => {
-    experiences += `${experience.jobTitle} at ${experience.employer} (${experience.startDate} - ${experience.endDate})\n`;
-  });
-
-  return `
-Act as a senior US-based technical recruiter, hiring manager, and ATS optimization specialist.
-
-Your goal is to generate a HIGH-CONVERSION technical resume optimized for:
-
-1) Human recruiters
-2) Hiring managers
-3) ATS parsing systems
-
-This resume should sound **like it was written by a real senior engineer**, not by AI.
-
----------------------------------------------------------
-GLOBAL WRITING RULES
----------------------------------------------------------
-
-• Every bullet MUST describe:
-  - a real system or feature
-  - the technical approach used
-  - the outcome or impact
-
-• Avoid vague phrases such as:
-  "responsible for", "worked on", "various technologies", "helped with".
-
-• Prefer this structure:
-
-  Action + System/Feature + Technology + Outcome
-
-Example:
-
-BAD:
-"Implemented scalable architectures for backend services."
-
-GOOD:
-"Built Node.js APIs powering payment workflows that processed 2M+ monthly transactions."
-
----------------------------------------------------------
-STEP 1 — KEYWORD ANALYSIS
----------------------------------------------------------
-
-From the job description extract:
-
-• Required technologies
-• Frameworks
-• Cloud platforms
-• Infrastructure tools
-• Security/compliance concepts
-• Leadership signals
-
-These technologies should appear naturally across the resume.
-
-DO NOT keyword stuff.
-
-Use technologies only where they make sense for the role.
-
----------------------------------------------------------
-STEP 2 — PROFESSIONAL TITLE GENERATION
----------------------------------------------------------
-
-Generate an ATS-friendly professional title that aligns with:
-
-• target_position from job description
-• candidate's most recent role seniority
-
-RULES:
-
-1. Never downgrade seniority.
-2. Preserve the job family from the target position.
-3. If candidate seniority is higher, combine seniority with job family.
-
-Example:
-
-Candidate: Senior Software Engineer  
-Target: Full Stack Developer  
-
-Result:
-Senior Full Stack Developer
-
-Return:
-
-"professional_title": ""
-
----------------------------------------------------------
-STEP 3 — POSITION-ALIGNED EXPERIENCE GENERATION
----------------------------------------------------------
-
-Rewrite each role to align with the job description while preserving:
-
-• company name
-• employment dates
-• job title
-• role count
-
-Do NOT fabricate new companies or roles.
-
----------------------------------------------------------
-ACHIEVEMENT STRUCTURE
----------------------------------------------------------
-
-For EACH role:
-
-• Target 8 bullets
-• Each bullet: 250–300 characters
-• ONE sentence per bullet
-• Start with a strong action verb
-• Avoid repeating the same verbs
-• Each bullet must describe a **specific technical contribution**
-
-Each bullet must include:
-
-1) a system or product
-2) the technical implementation
-3) a measurable or observable outcome
-
----------------------------------------------------------
-QUANTIFICATION RULE
----------------------------------------------------------
-
-At least ONE bullet per role must contain a metric:
-
-Examples:
-
-• reduced latency by 35%
-• supported 100k+ users
-• processed 5M+ records daily
-• improved deployment speed by 60%
-
-Do NOT fabricate unrealistic numbers.
-
----------------------------------------------------------
-ANTI-GENERIC LANGUAGE RULE
----------------------------------------------------------
-
-The following phrases are NOT allowed:
-
-• "leveraged modern technologies"
-• "responsible for"
-• "worked with various tools"
-• "helped improve performance"
-• "participated in development"
-
-Each bullet must reference something concrete such as:
-
-• payment service
-• customer dashboard
-• internal data pipeline
-• authentication service
-• billing platform
-• analytics pipeline
-
----------------------------------------------------------
-TECHNOLOGY USAGE RULE
----------------------------------------------------------
-
-Mention technologies only if:
-
-1) they appear in the job description
-OR
-2) they are realistically used in that role.
-
-Do NOT force technology names into every bullet.
-
-Natural usage is preferred.
-
----------------------------------------------------------
-VERSION CONTROL RULE
----------------------------------------------------------
-
-Technology versions may only appear if they existed during the role timeline.
-
-Example:
-
-If Angular 17 released in 2023,
-do not reference it in a role from 2019.
-
-For older roles:
-
-Use wording such as:
-"modern Angular architecture patterns available at the time."
-
----------------------------------------------------------
-STRUCTURAL ENFORCEMENT
----------------------------------------------------------
-
-Return this exact JSON structure:
-
-{
-  "work_experiences": [
-    {
-      "company_name": "",
-      "company_location": "City, State, Country",
-      "job_title": "",
-      "start_date_employment": "",
-      "end_date_employment": "",
-      "achievements": []
-    }
-  ]
-}
-
----------------------------------------------------------
-STEP 4 — EXECUTIVE SUMMARY
----------------------------------------------------------
-
-Create a 5–7 bullet professional summary.
-
-The summary should clearly highlight:
-
-• 8+ years of engineering experience
-• full-stack or backend expertise
-• distributed systems
-• cloud platforms (AWS/Azure/GCP if applicable)
-• building scalable production systems
-• mentoring engineers
-• reliability and performance optimization
-
-Each summary bullet must be:
-
-• 1 sentence
-• 180–220 characters
-• focused on concrete expertise
-
----------------------------------------------------------
-STEP 5 — TECHNICAL SKILLS
----------------------------------------------------------
-
-Create a categorized skills section:
-
-{
-  "Programming Languages": [],
-  "Frameworks": [],
-  "Cloud & Infrastructure": [],
-  "Architecture & Design": [],
-  "Databases": [],
-  "DevOps": [],
-  "Security": [],
-  "Leadership": []
-}
-
-Rules:
-
-• Include all technologies mentioned in the job description
-• Avoid duplicate technologies
-• Use exact naming from the job description
-
----------------------------------------------------------
-STEP 6 — TARGET INFORMATION
----------------------------------------------------------
-
-Extract from the job description:
-
-{
-  "target_company_name": "",
-  "target_position": ""
-}
-
----------------------------------------------------------
-FINAL VALIDATION
----------------------------------------------------------
-
-Before returning the response ensure:
-
-✓ Role count matches input  
-✓ Companies unchanged  
-✓ Dates unchanged  
-✓ 8 bullets per role (when possible)  
-✓ Each bullet describes a concrete technical system  
-✓ At least one quantified metric per role  
-✓ No vague language  
-✓ Technologies appear naturally  
-
----------------------------------------------------------
-OUTPUT FORMAT
----------------------------------------------------------
-
-Return JSON only.
-
-{
-"work_experiences": [
-  {
-    "job_title": "",
-    "company_name": "",
-    "start_date_employment": "",
-    "end_date_employment": "",
-    "achievements": []
-  }
-],
-"summary": [],
-"technical_skills": {},
-"target_company_name": "",
-"target_position": "",
-"professional_title": ""
-}
-
----------------------------------------------------------
-CANDIDATE EXPERIENCE
----------------------------------------------------------
-
-${experiences}
-
----------------------------------------------------------
-JOB DESCRIPTION
----------------------------------------------------------
-
 ${jobDescription}
 `;
 };
@@ -1094,72 +335,627 @@ ${jobDescription}
 `;
 };
 
-const prepareResumePrompt_ATS_Friendly = (experienceDetails, jobDescription) => {
+// Note: Possible to select prompt for users
+const hybridResumePrompt = (experienceDetails, jobDescription) => {
   let experiences = '';
   experienceDetails.map((experience) => {
-    experiences += `${experience.jobTitle} at ${experience.employer} (${experience.startDate} - ${experience.endDate})\n`;
+    experiences += `${experience.jobTitle} at ${experience.employer} (${experience.startDate} - ${experience.endDate})`;
+    experiences += `\n`;
+    if (experience.description) {
+      experiences += `${experience.description}\n`;
+    }
+    if (experience.achievements && experience.achievements.length > 0) {
+      experience.achievements.forEach((item) => {
+        experiences += `- ${item}\n`;
+      });
+    }
+    experiences += `\n`;
   });
+
   return `
-    ### SYSTEM INSTRUCTION (UPDATED)
+You are an expert resume writer for hybrid and customer-facing technology roles, including service architecture, presales engineering, solutions consulting, technical product roles, and business analysis.
 
-1. Align strongly with the Job Description (JD), but NEVER fabricate experience. Only adapt, rephrase, or expand based on realistic and transferable experience.
+SYSTEM INSTRUCTION
+Rewrite the resume so it aligns strongly with the target job description while staying believable, technically credible, and grounded in the candidate's actual background.
+- Do NOT change company names or employment dates.
+- Do NOT invent unrealistic achievements, fake business outcomes, fake domains, or tools the candidate would not plausibly have used.
+- Do NOT change the required JSON output structure.
+- Output must be valid JSON only — no explanation, commentary, or markdown outside the JSON object.
 
-2. Prioritize IMPACT over keyword stuffing:
-   - Each bullet must clearly show outcome, scale, or business value.
-   - At least 70% of bullets must include numbers, scale, or measurable results.
+CORE GOAL
+The two most important parts of this task are:
+1. The achievement bullets under each work experience
+2. The skills section
 
-3. Bullet rules:
-   - 5–8 bullet points per role (not more)
-   - Each bullet must be concise (1–2 lines max)
-   - Use varied action verbs, but do NOT force unnatural synonyms
+Both must reflect the actual target role correctly.
+A technically strong resume can still fail if the skills and bullet emphasis reflect the wrong kind of job.
 
-4. Rewrite bullets to match JD technologies and responsibilities where truthfully applicable:
-   - Prefer JD keywords (tools, frameworks, processes)
-   - Emphasize system design, ownership, and complexity
+ROLE CONTEXT
+This prompt is for hybrid / service / solutions / presales / product / business-analysis roles. Examples:
+- Service Architect
+- Solutions Architect
+- Presales Engineer
+- Sales Engineer
+- Technical Consultant
+- Product Manager
+- Business Analyst
+- Service Designer
+- Customer Solutions Lead
+- Technical Account Manager
 
-5. Focus especially on MOST RECENT roles:
-   - Add or strengthen backend, data, AI, cloud, or system-level work if relevant
+These roles prioritize turning customer or business requirements into structured solutions, workflows, services, proposals, documentation, service definitions, operational models, cross-team coordination, customer communication, or platform/process alignment more than day-to-day coding depth.
 
-6. Summary:
-   - 4–6 lines max
-   - Focus on strongest technical strengths + JD alignment
-   - Mention 2–3 standout systems or domains (e.g., data pipelines, integrations, scalable systems)
+GENERAL WRITING RULES
+- Tailor the resume to the JD, but do not force every past job to look identical to the target role.
+- Use JD terminology only when it honestly fits the candidate's actual background.
+- Preserve strong original bullets if they are already specific, credible, and relevant.
+- Rewrite weak, vague, repetitive, inflated, or mismatched bullets.
+- Add new bullets only when they are a reasonable extension of the candidate's known experience, responsibilities, or stack.
+- Make the candidate sound like a strong fit, but never fabricated.
+- Write like a real human wrote it, not like an AI resume generator.
+- Prefer credibility over keyword stuffing.
 
-7. Skills:
-   - Group into categories (Frontend, Backend, Cloud, Data, Tools)
-   - Only include skills that are actually relevant
-   - Avoid overloading with unnecessary tools
+ACHIEVEMENT WRITING RULES
+For each work experience:
+- Write 5 to 8 bullet points.
+- Focus on quality over quantity.
+- Recent and most relevant roles should get the strongest tailoring.
+- Older roles can be slightly shorter and more foundational.
 
-8. Maintain clean, human-readable tone:
-   - Avoid buzzwords
-   - Avoid robotic phrasing
-   - Make it sound like a strong senior engineer wrote it
+Each bullet should usually reflect some version of:
+[action] + [what was owned / changed / delivered / clarified / designed / supported] + [how / tools / stakeholders / systems / process] + [result / impact / scope / operational outcome]
 
-9. Professional Title:
-   - Align with target role
-   - Never downgrade seniority
-   - Keep concise and standard
+A good bullet should reveal one or more of these:
+- ownership
+- complexity
+- process or service definition
+- scale
+- decision-making
+- operational impact
+- customer impact
+- cross-team alignment
+- delivery outcome
 
-10. Optimize for BOTH:
-   - ATS keyword matching
-   - Human readability (hiring manager scan in 10–15 seconds)
-  `;
+METRICS RULES
+- Use metrics only when they sound realistic, defensible, and useful.
+- Good metrics include:
+  number of workflows supported
+  bid volume
+  reduction in manual effort
+  faster onboarding
+  number of stakeholders or teams involved
+  SLA / incident / ticket improvements
+  proposal turnaround
+  catalogue coverage
+- Do NOT force every bullet to have a number.
+- If a metric sounds inflated, indirect, or hard to defend, rewrite it into a more believable operational outcome.
+- Avoid suspicious claims like:
+  "95% increase in customer confidence"
+  "15% increase in cross-selling"
+  "95% delivery accuracy"
+  "remarkable improvement"
+  "massive gains"
+
+STYLE RULES
+- Write in clean, natural, professional English.
+- Avoid buzzwords and corporate filler such as:
+  results-driven
+  proven track record
+  dynamic
+  team player
+  self-starter
+  go-getter
+  passionate
+  adept at
+  meticulous
+  synergized
+  world-class
+  exceptional
+- Do not use robotic phrasing or repetitive sentence patterns.
+- Do not overstuff keywords unnaturally.
+- Vary wording naturally, but do not force artificial verb diversity rules.
+- Prefer direct, specific language over vague business language.
+- Make the tone sound like a real senior professional describing meaningful work.
+
+BULLET RULES
+Work experience bullets must foreground:
+- requirements shaping, service/process definition, stakeholder engagement, documentation, delivery alignment, solution framing, reusable assets, operating model design, and customer-facing problem solving.
+- Coding languages and frameworks may appear only as supporting background or in a condensed technical category if they help credibility.
+- The resume should make the recruiter think: "this person can define, structure, articulate, and operationalize services or solutions," not "this person is mainly applying for a software engineering job."
+
+Strong bullet examples:
+- "Worked with sales, operations, and engineering stakeholders during presales cycles to translate customer onboarding and support requirements into structured service workflows, clarifying ownership boundaries, escalation paths, SLA assumptions, and delivery dependencies before proposals were finalized."
+- "Standardized recurring customer requests into reusable service parameters and response templates, reducing bespoke effort across tender submissions, statements of work, and internal handover discussions."
+- "Facilitated discovery sessions with technical and non-technical stakeholders to turn loosely defined customer asks into documented service models covering ticket routing, reporting expectations, onboarding steps, and service desk interaction points."
+- "Partnered with CRM and business systems teams to define service-related parameters, selectable options, and downstream operational impacts for new offerings, improving clarity on what was standard, configurable, or outside catalogue scope."
+- "Supported bid and proposal work by drafting service descriptions, scope assumptions, and workflow text that commercial and delivery teams could use consistently across customer-facing documentation."
+
+BULLET EMPHASIS — prioritize these themes:
+1. Customer requirement interpretation
+2. Service definition and workflow/process design
+3. Presales, bids, tenders, proposals, SoWs, MSAs
+4. Operational alignment with delivery/support teams
+5. Standardization, service catalogues, reusable assets
+6. Workshops, stakeholder communication, documentation
+7. Technical background as support, not as dominant identity
+
+SUMMARY RULES
+Write 3 to 4 sentences in the summary.
+- Position the candidate as a strong service / solutions / presales / process / architecture hire depending on the JD.
+- Emphasize ability to turn ambiguous requirements into structured, deliverable definitions, workflows, solutions, or service models.
+- Mention customer-facing, operational, and cross-functional strengths first.
+- Technical background may appear, but should not dominate unless the JD clearly wants it.
+
+SKILLS RULES
+This is one of the most important sections.
+
+STEP 1 — BUILD SKILLS BASED ON WHAT THE JD ACTUALLY VALUES
+- Do NOT lead with programming languages and engineering frameworks unless the JD clearly expects them as a meaningful part of the job.
+- Build the skills section around what the JD actually values.
+- Extract the skill categories directly from the JD language.
+- Good category patterns may include:
+  Service Architecture
+  Service Design & Process
+  Presales & Bid Support
+  Stakeholder Engagement
+  Operations & Delivery Alignment
+  Platforms & Tools
+  Domain Knowledge
+  Technical Background
+- Use "Technical Background" as a smaller, supporting category only when it helps credibility.
+- The skills section must look like it belongs to the target role, not to the candidate's old role.
+
+STEP 2 — STRICT SKILL SELECTION RULE
+Every skill listed must satisfy at least one of these:
+- explicitly requested in the JD
+- clearly implied by the JD
+- strongly useful for the target role
+- grounded in the candidate's actual background
+
+If a skill is real but irrelevant to the target role, remove it.
+
+STEP 3 — FINAL SKILLS CHECK
+Before outputting, verify:
+- the skills section matches the target role identity
+- the categories fit the JD
+- the section would make a recruiter think the candidate belongs in this role
+- there is no engineering-heavy skill dump for a non-engineering or hybrid role
+
+EXPERIENCE ALIGNMENT RULES
+- The most recent roles carry the strongest tailoring.
+- Do not bury service/process/customer-facing achievements under engineering stack bullets.
+- If a past role was engineering-heavy but the target role is this type, reinterpret the work through the lens of:
+  solution design
+  stakeholder alignment
+  requirements translation
+  workflow definition
+  service operationalization
+  documentation
+  handoff readiness
+  cross-team coordination
+while staying truthful to the original experience.
+
+TECHNICAL BACKGROUND REPOSITIONING RULE
+If the candidate comes from engineering:
+- preserve the technical background as a supporting strength
+- do not let it dominate the summary, skills, or first impression
+- use it as evidence that the candidate can communicate effectively with technical teams, validate deliverability, and translate complex requirements into workable service or solution definitions
+
+JOB TITLE REWRITING RULE
+The candidate's original job titles come from a software engineering background and must be rewritten to reflect the target role type. This is essential — a recruiter seeing "Lead Software Engineer" on a presales or service role resume will immediately question the fit.
+
+Rules:
+- Rewrite each job title to reflect the seniority level and function most relevant to the target role
+- The rewritten title must be believable given the company, dates, and actual work described
+- Do not invent titles that are implausible for the company size or industry
+- Mirror the seniority progression of the original titles (junior → mid → senior → lead)
+- Draw the new title language from the target JD where possible
+
+Example rewrites for a presales / solutions / service target role:
+  "Lead Software Engineer"      → "Lead Solutions Engineer" or "Senior Presales Engineer"
+  "Senior Software Engineer"    → "Senior Technical Consultant" or "Solutions Engineer"
+  "Middle Software Engineer"    → "Technical Consultant" or "Solutions Analyst"
+  "Junior Software Engineer"    → "Junior Technical Consultant" or "Associate Solutions Engineer"
+
+Use the target JD's exact role language as the anchor when choosing titles.
+
+HARD CONSTRAINTS
+- Preserve all company names exactly.
+- Preserve all employment dates exactly.
+- Do not fabricate tools, certifications, industries, or domain knowledge with no support.
+- Do not exaggerate scope beyond what is plausible.
+- Do not output any explanation, commentary, markdown, or text outside the JSON object.
+- Output must be valid JSON only.
+
+FINAL QUALITY CHECK BEFORE OUTPUT
+Before producing the final JSON, verify all of the following:
+- the summary matches the target role
+- the skills section matches the target role
+- the work experience bullets match the target role
+- the candidate sounds believable and strong
+- the resume is tailored, but not over-tailored
+- the bullets show ownership, complexity, and outcomes
+- the writing is natural and human
+- the content is not stuffed with fake metrics or irrelevant keywords
+- the resume does not read like a standard software engineer resume
+
+OUTPUT FORMAT
+{
+  "work_experiences": [
+    {
+      "job_title": "",
+      "company_name": "",
+      "start_date_employment": "",
+      "end_date_employment": "",
+      "achievements": []
+    }
+  ],
+  "summary": [],
+  "technical_skills": {
+    "Category1": ["skill1", "skill2", "skill3"],
+    "Category2": ["skill1", "skill2", "skill3"]
+  },
+  "target_company_name": "",
+  "target_position": ""
+}
+
+Here is my work experience:
+${experiences}
+
+Here is the job description:
+${jobDescription}
+`;
 };
+/*
+const engineeringResumePrompt = (experienceDetails, jobDescription) => {
+  let experiences = '';
+  experienceDetails.forEach((exp) => {
+    experiences += `${exp.jobTitle} at ${exp.employer} (${exp.startDate} - ${exp.endDate})\n`;
+  });
+  console.log({ experiences });
+  return `
+You are an expert technical resume writer for senior engineers.
 
-const getAICompletion = async (prompt) => {
-  const model = 'gpt-4.1-nano';
+Rewrite the resume to strongly align with the target job while remaining truthful and grounded in the candidate's real experience.
+
+#CORE RULES
+- Do NOT change company, title, or dates
+- Do NOT invent tools, systems, or metrics
+- Use only supported evidence
+- Output ONLY valid JSON
+
+#ROLE ALIGNMENT (CRITICAL)
+- Identify the target role's core domain (DevOps, ML, Data, Backend, Security, Platform, Salesforce, etc.)
+- Prioritize relevant experience, tools, and systems
+- De-emphasize unrelated but supported technologies
+- Do NOT include everything — select what strengthens alignment
+- Prefer platform-specific terminology when applicable (e.g., Apex, Kubernetes, Spark, etc.)
+- Avoid generic system descriptions when specific technologies are available
+
+#TITLE
+- 3~7 words
+- aligned with target role
+- realistic (no exaggeration)
+
+#SUMMARY
+- 3~4 sentences, natural human tone
+- Sentence 1: role identity + strongest technical differentiator (e.g., scale, domain, system type)
+- Sentence 2: systems built
+- Sentence 3: performance / reliability / operations
+- Sentence 4 (optional): mentoring or ownership
+
+Rules:
+- Do NOT list many tools
+- Avoid repeating the same capability across sentences
+- Must read like human-written, not keyword-stuffed
+
+#ACHIEVEMENTS (MOST IMPORTANT)
+Each bullet MUST include:
+- what was built or improved
+- at least one concrete technology or platform mechanism
+- context (API, pipeline, integration, cloud, etc.)
+- measurable impact OR system-level outcome when possible
+
+Strong preference:
+- quantified technical impact (scale, throughput, latency, deployment speed)
+- specific implementation details (e.g., Batch Apex, Kafka, Airflow)
+- system-level thinking (performance, reliability, data volume)
+
+Strict rules:
+- No vague bullets
+- No generic responsibilities
+- No weak verbs ("assisted", "participated", "helped")
+- No vague impact phrases ("improved reliability", "enhanced performance", "user engagement")
+- Avoid safe/low-signal bullets without technical depth
+- Prefer ownership-driven language ("designed", "implemented", "led", "optimized")
+- Prefer platform-specific terminology over generic descriptions
+- Prefer the strongest technically detailed version when multiple valid rewrites exist
+
+#BULLET COUNT
+- Recent roles: 6~8 bullets
+- Older roles: 5~6 bullets
+- NEVER below minimum
+- Expand from description if needed
+
+#BULLET LENGTH
+- Every recent-role bullet must be 24~36 words
+- Every older-role bullet must be 18~30 words
+- Do not return bullets shorter or longer than these ranges
+- If a bullet is too short, expand it with supported technical detail such as stack, architecture, deployment context, system constraints, or measurable outcome
+- If a bullet is too long, tighten wording without removing technical specificity or supported impact
+
+#METRICS (CRITICAL)
+- Use real numbers when available (~40~60% of bullets)
+- Prefer scale, performance, reliability, and throughput
+- Preserve all existing metrics
+
+- When scale or performance is implied (e.g., "high-volume", "enterprise"),
+  convert it into a concrete metric whenever reasonably possible
+  (e.g., thousands, tens of thousands, millions of records)
+
+- Replace vague terms like:
+  "high-volume", "large datasets", "improved performance"
+  with specific, realistic numbers when supported
+
+- Inferred metrics must be conservative and believable
+- No fake or exaggerated metrics
+
+#SKILLS
+Include ONLY skills that are:
+1. explicitly supported
+2. relevant to the target role
+
+- Remove ALL duplicates and overlapping skills
+- Keep one canonical representation (e.g., "CI/CD", not both "CI/CD" and "CI/CD pipelines")
+- Maintain consistent granularity
+- Prioritize platform-specific and role-relevant skills first
+
+Structure:
+technical_skills: {
+  "Languages": [],
+  "Frontend": [],
+  "Backend & API": [],
+  "Cloud & Infrastructure": [],
+  "Databases & Messaging": [],
+  "Testing & Observability": [],
+  "Security & Compliance": [],
+  "Delivery & Collaboration": []
+}
+
+#FINAL VALIDATION
+Before output:
+- every role meets minimum bullet count
+- every bullet includes a concrete technical anchor
+- no invented tools or metrics
+- metrics used whenever reasonably possible
+- no vague or low-signal bullets
+- strong technical depth across all roles
+- consistent senior-level tone
+- reads naturally (not AI-generated)
+- every bullet satisfies the required word-count range for its role
+
+#OUTPUT FORMAT
+{
+  "professional_title": "",
+  "work_experiences": [
+    {
+      "job_title": "",
+      "company_name": "",
+      "start_date_employment": "",
+      "end_date_employment": "",
+      "achievements": []
+    }
+  ],
+  "summary": [],
+  "technical_skills": {
+    "Languages": [],
+    "Frontend": [],
+    "Backend & API": [],
+    "Cloud & Infrastructure": [],
+    "Databases & Messaging": [],
+    "Testing & Observability": [],
+    "Security & Compliance": [],
+    "Delivery & Collaboration": []
+  },
+  "target_company_name": "",
+  "target_position": ""
+}
+
+#INPUT
+Work Experience:
+${experiences}
+
+Job Description:
+${jobDescription}
+`;
+};
+*/
+const engineeringResumePrompt = (experienceDetails, jobDescription) => {
+  let experiences = '';
+  experienceDetails.forEach((exp) => {
+    experiences += `${exp.jobTitle} at ${exp.employer} (${exp.startDate} - ${exp.endDate})\n`;
+  });
+
+  return `
+You are an expert technical resume writer for senior engineers.
+
+Rewrite the resume to strongly align with the target job while remaining realistic and technically credible.
+
+#CORE RULES
+- Do NOT change company, title, or dates
+- Do NOT invent specific tools or technologies not present in the job description
+- You MAY infer responsibilities, systems, and scale based on role type (e.g., backend engineer, Python engineer)
+- Output ONLY valid JSON
+
+#LOW-INPUT RECONSTRUCTION MODE (CRITICAL)
+The input contains minimal detail (titles + dates only).
+
+You MUST:
+- reconstruct realistic responsibilities based on job title + seniority
+- assume industry-standard systems for that role (e.g., APIs, databases, CI/CD, testing)
+- generate believable production-level engineering work
+- ensure consistency across roles (growth from junior → senior)
+
+You MUST NOT:
+- fabricate niche or uncommon tools unless present in job description
+- assign unrealistic scope for early-career roles
+- create exaggerated business impact
+
+#ROLE ALIGNMENT (CRITICAL)
+- Align strongly with job description domain (e.g., Python backend)
+- Prioritize stack from JD:
+  Python, FastAPI, Postgres, Temporal, Docker, Kubernetes
+
+- If multiple valid implementations exist:
+  → choose the one closest to JD stack
+
+#TITLE (STRICT)
+- MUST match job description title exactly when clearly defined
+
+#SUMMARY
+- 3~4 sentences
+- Focus on:
+  - backend systems
+  - production services
+  - reliability + deployment
+- No fluff, no personality language
+
+#ACHIEVEMENTS (CORE)
+Each bullet MUST include:
+- action (designed, built, optimized)
+- system (API, service, database, pipeline)
+- technology (prefer JD stack)
+- outcome (performance, scale, reliability)
+
+#BULLET COUNT
+- Recent roles: 6~8 bullets
+- Older roles: 5~6 bullets
+- NEVER below minimum
+
+#BULLET LENGTH (STRICT)
+- Recent: 24~36 words
+- Older: 18~30 words
+
+#METRICS (CRITICAL FOR LOW-INPUT)
+Since no metrics are provided:
+
+You MUST infer realistic engineering scale using conservative ranges:
+
+- APIs: thousands to millions of requests/day
+- DB records: thousands to tens of millions
+- latency: ms improvements (e.g., 300ms → 120ms)
+- deployments: minutes vs hours
+- uptime: 99.9% (only for senior roles)
+
+Rules:
+- Metrics MUST be believable
+- DO NOT use exaggerated numbers
+- DO NOT use percentages without context
+- At least 40% of bullets MUST contain metrics or concrete scale
+
+#TECHNOLOGY RULE
+- Use ONLY:
+  - technologies in job description
+  - or universally expected ones for the role (e.g., REST APIs, SQL, CI/CD)
+
+- NEVER introduce unrelated tools (e.g., Spark, Snowflake, Terraform unless in JD)
+
+#ANTI-WEAK BULLET RULE
+- Avoid:
+  "worked on", "helped", "participated"
+- Avoid:
+  vague impact (e.g., "improved performance")
+
+- Every bullet must feel like:
+  a production engineering contribution
+
+#SKILLS
+- Use ONLY JD stack + essential supporting tech
+- Deduplicate
+- Keep concise
+
+#FINAL VALIDATION
+Before output:
+- each role meets bullet count
+- at least 40% bullets contain metrics or scale
+- no invented niche tools
+- bullets reflect backend production systems
+- resume reads like a real engineer wrote it
+
+#OUTPUT FORMAT
+{
+  "professional_title": "",
+  "work_experiences": [
+    {
+      "job_title": "",
+      "company_name": "",
+      "start_date_employment": "",
+      "end_date_employment": "",
+      "achievements": []
+    }
+  ],
+  "summary": [],
+  "technical_skills": {
+    "Languages": [],
+    "Frontend": [],
+    "Backend & API": [],
+    "Cloud & Infrastructure": [],
+    "Databases & Messaging": [],
+    "Testing & Observability": [],
+    "Security & Compliance": [],
+    "Delivery & Collaboration": []
+  },
+  "target_company_name": "",
+  "target_position": ""
+}
+
+#INPUT
+Work Experience:
+${experiences}
+
+Job Description:
+${jobDescription}
+`;
+};
+const reorderWorkExperiences = (originalExperiences, aiExperiences) => {
+  return originalExperiences.map((orig) => {
+    const matched = aiExperiences.find((ai) => ai.company_name?.trim().toLowerCase() === orig.employer?.trim().toLowerCase());
+
+    return {
+      job_title: matched.job_title,
+      company_name: orig.employer,
+      start_date_employment: orig.startDate,
+      end_date_employment: orig.endDate,
+      achievements: matched?.achievements || []
+    };
+  });
+};
+const getAICompletion = async (prompt, model = 'gpt-4.1-nano') => {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const completion = await openai.chat.completions.create({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.7 });
   return JSON.parse(completion.choices[0].message.content); // Validate JSON
 };
 
-const generateResume = async (experienceDetails, jobDescription, profileTemplate = 'template1') => {
-  const prompt =
-    profileTemplate === 'template6'
-      ? prepareTwoColResumePrompt(experienceDetails, jobDescription)
-      : prepareResumePrompt(experienceDetails, jobDescription);
+const generateResume = async (experienceDetails, jobDescription, profileTemplate = 'template1', resumeType) => {
+  let prompt;
+  let completion;
+  const cleanedJD = sanitizeJobDescription(jobDescription);
+  if (resumeType === 'hybrid') {
+    prompt = hybridResumePrompt(experienceDetails, cleanedJD);
+    completion = await getAICompletion(prompt, 'gpt-5.4-nano');
+  } else if (resumeType === 'engineering') {
+    prompt = engineeringResumePrompt(experienceDetails, cleanedJD);
+    completion = await getAICompletion(prompt, 'gpt-5.4-nano');
+  } else if (profileTemplate === 'template6') {
+    prompt = prepareTwoColResumePrompt(experienceDetails, jobDescription);
+    completion = await getAICompletion(prompt);
+  } else {
+    prompt = prepareResumePrompt(experienceDetails, jobDescription);
+    completion = await getAICompletion(prompt);
+  }
 
-  const completion = await getAICompletion(prompt);
+  completion.work_experiences = reorderWorkExperiences(experienceDetails, completion.work_experiences || []);
 
+  console.log(completion.work_experiences);
   return completion;
 };

@@ -15,6 +15,11 @@ export const TEMPLATE_OPTIONS = [
   { label: 'Template 8', value: 'template8', img: '/assets/client/images/template8.png' }
 ];
 
+export const RESUME_TYPE_OPTIONS = [
+  { label: 'Hybrid', value: 'hybrid' },
+  { label: 'Engineering', value: 'engineering' }
+];
+
 export const GOOGLE_LOGIN_CLIENT_KEY = '547919628583-plt1588ht6a2vtjcnoo4sulhljeptfr6.apps.googleusercontent.com';
 
 export const CONSTANT_USER_ROLE_SUPER = 'SUPER';
@@ -118,5 +123,5 @@ export const gradients = {
   blue: 'linear-gradient(350deg, #6B73FF 0%, #000DFF 100%)',
   purple: 'linear-gradient(350deg, #ABDCFF 0%, #0396FF 100%)',
   pink: 'linear-gradient(350deg, #FEB692 0%, #EA5455 100%)',
-  green: 'linear-gradient(350deg, #81FBB8 0%, #28C76F 100%)',
+  green: 'linear-gradient(350deg, #81FBB8 0%, #28C76F 100%)'
 };

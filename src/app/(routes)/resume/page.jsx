@@ -1,12 +1,16 @@
 'use client';
 import { Select, Input, Space, Row, Col, Form } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGlobalContext } from '@/context/auth';
 import { isValidJobUrl, showToastErrorMsg, showToastInfoMsg } from '@/helpers/frontend';
 import { ContentWrapper, Container, StyledButton } from '@/_components/layout/client/styled';
 import profileService from '@/services/(routes)/profiles';
+import { RESUME_TYPE_OPTIONS } from '@/config/constants';
 
 const { TextArea } = Input;
+
+// Replace these with the exact profile names or IDs that need the extra field
+const SPECIAL_PROFILE_NAMES = ['James Zamora', 'Shakil Watford', 'John Smith'];
 
 export default function ResumePage() {
   const { loginUser } = useGlobalContext();
@@ -20,6 +24,7 @@ export default function ResumePage() {
 
   const [profiles, setProfiles] = useState([]);
   const [profileId, setProfileId] = useState('');
+  const [resumeType, setResumeType] = useState('');
 
   const [isWorking, setWorking] = useState(false);
   const [isCovering, setCovering] = useState(false);
@@ -41,6 +46,23 @@ export default function ResumePage() {
   useEffect(() => {
     if (currentUser) fetchProfiles();
   }, [currentUser]);
+
+  const selectedProfile = useMemo(() => {
+    return profiles.find((p) => p._id === profileId);
+  }, [profiles, profileId]);
+
+  const shouldShowResumeType = useMemo(() => {
+    if (!selectedProfile) return false;
+    return SPECIAL_PROFILE_NAMES.includes(selectedProfile.profileName);
+    // If you prefer ID-based matching, use:
+    // return ['profile_id_1', 'profile_id_2'].includes(selectedProfile._id);
+  }, [selectedProfile]);
+
+  useEffect(() => {
+    if (!shouldShowResumeType) {
+      setResumeType('');
+    }
+  }, [shouldShowResumeType]);
 
   const checkResumeExists = async () => {
     const res = await fetch('/api/resume/check-valid', {
@@ -95,15 +117,6 @@ export default function ResumePage() {
       return;
     }
 
-    const a = {
-      url: jobUrl,
-      desc: jobDesc,
-      profileId,
-      userId: currentUser.id,
-      companyName,
-      position
-    };
-
     try {
       const res = await fetch('/api/resume/create-resume', {
         method: 'POST',
@@ -114,7 +127,8 @@ export default function ResumePage() {
           profileId,
           userId: currentUser.id,
           companyName,
-          position
+          position,
+          resumeType: shouldShowResumeType ? resumeType : null
         })
       });
 
@@ -208,6 +222,7 @@ export default function ResumePage() {
                 />
               </Form.Item>
             </Col>
+
             <Col span={12}>
               <Form.Item label='Profile'>
                 <Select
@@ -228,7 +243,7 @@ export default function ResumePage() {
           </Row>
 
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={shouldShowResumeType ? 8 : 12}>
               <Form.Item label='Company Name'>
                 <Input
                   placeholder='Company Name'
@@ -238,12 +253,28 @@ export default function ResumePage() {
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={shouldShowResumeType ? 8 : 12}>
               <Form.Item label='Position'>
                 <Input placeholder='Position' value={position} disabled={isWorking} onChange={(e) => setPosition(e.target.value)} />
               </Form.Item>
             </Col>
+
+            {shouldShowResumeType && (
+              <Col span={8}>
+                <Form.Item label='Resume Type'>
+                  <Select
+                    placeholder='Select Resume Type'
+                    disabled={isWorking}
+                    value={resumeType || undefined}
+                    onChange={setResumeType}
+                    options={RESUME_TYPE_OPTIONS}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+            )}
           </Row>
+
           <Form.Item>
             <TextArea
               rows={24}
@@ -264,6 +295,7 @@ export default function ResumePage() {
             >
               {resumeExists ? 'Resume Already Exists' : 'Generate Resume'}
             </StyledButton>
+
             {canGenerateCover && (
               <StyledButton variant='secondary' size='large' loading={isCovering} onClick={generateCoverPDF}>
                 Generate Cover

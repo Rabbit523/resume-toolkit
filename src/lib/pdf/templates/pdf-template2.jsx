@@ -43,7 +43,7 @@ export async function generate_template2_pdf(data) {
   return await engine.generate(data, async (pdf, d) => {
     pdf.drawTextBlock(sanitizeText(d.name.toUpperCase()), pdf.style.fontsize.name, pdf.fonts.bold, pdf.style.colors.black);
     pdf.offsetY(pdf.style.spacing.normal / 2);
-    pdf.drawTextBlock(sanitizeText(d.professional_title || d.target_position), pdf.style.fontsize.title, pdf.fonts.bold, pdf.style.colors.accentGreen);
+    pdf.drawTextBlock(sanitizeText(d.target_position), pdf.style.fontsize.title, pdf.fonts.bold, pdf.style.colors.accentGreen);
 
     const contact = sanitizeText([d.mobile, d.email, d.linkedin || null, d.address].filter(Boolean).join('   |   '));
     pdf.drawTextBlock(contact, pdf.style.fontsize.contactInfo, pdf.fonts.regular, pdf.style.colors.dark);

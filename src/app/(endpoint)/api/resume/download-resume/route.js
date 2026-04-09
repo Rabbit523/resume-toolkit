@@ -14,6 +14,7 @@ import { generate_template5_pdf } from '@/lib/pdf/templates/pdf-template5';
 import { generate_template6_pdf } from '@/lib/pdf/templates/pdf-template6';
 import { generate_template7_pdf } from '@/lib/pdf/templates/pdf-template7';
 import { generate_template8_pdf } from '@/lib/pdf/templates/pdf-template8';
+import { generate_template9_pdf } from '@/lib/pdf/templates/pdf-template9';
 
 export const POST = async (req) => {
   try {
@@ -23,6 +24,7 @@ export const POST = async (req) => {
     const profile = await profileModel.findById(profileId);
     const resume = await resumeModel.findById(resumeId);
     const completion = resume.resumeResponse;
+
     const addr = profile.profileAddress;
     const address =
       addr.street || addr.city || addr.state || addr.zip ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ') : '';
@@ -62,6 +64,8 @@ export const POST = async (req) => {
       pdfBytes = await generate_template7_pdf(r);
     } else if (profileTemplate === 'template8') {
       pdfBytes = await generate_template8_pdf(r);
+    } else if (profileTemplate === 'template9') {
+      pdfBytes = await generate_template9_pdf(r);
     } else {
       pdfBytes = await generate_template1_pdf(r);
     }

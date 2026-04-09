@@ -56,13 +56,19 @@ export async function generate_template1_pdf(data) {
     pdf.drawBullets(d.summary, pdf.style.fontsize.summary, pdf.fonts.regular);
 
     pdf.drawSection('Technical Skills', true);
-    const skillRows = Object.entries(data.technical_skills).map(([cat, skills]) => [cat, skills.join(', ')]);
+    const skillRows = Object.entries(data.technical_skills)
+      .filter(([_, skills]) => Array.isArray(skills) && skills.length > 0)
+      .map(([cat, skills]) => [cat, skills.join(', ')]);
 
-    pdf.drawWrappedTable({
-      columnWidths: [pdf.style.table.categoryColWidth, pdf.getWidth() - (pdf.style.margin.x * 2 + pdf.style.table.categoryColWidth)],
-      headers: ['Category', 'Skills'],
-      rows: skillRows
-    });
+    if (skillRows.length > 0) {
+      pdf.drawWrappedTable({
+        columnWidths: [pdf.style.table.categoryColWidth, pdf.getWidth() - (pdf.style.margin.x * 2 + pdf.style.table.categoryColWidth)],
+        headers: ['Category', 'Skills'],
+        rows: skillRows
+      });
+
+      pdf.offsetY(pdf.style.spacing.section);
+    }
     pdf.offsetY(pdf.style.spacing.section);
 
     pdf.drawSection('Experience', true);

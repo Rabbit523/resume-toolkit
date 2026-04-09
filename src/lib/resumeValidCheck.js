@@ -14,6 +14,7 @@ function hashString(text) {
   return crypto.createHash('sha256').update(normalizeText(text)).digest('hex');
 }
 
+// Note: Possible to update validation check for disallowing job link and job description change trick
 export async function resumeValidCheck(profileId, jobLink, jobDescription, companyName, position) {
   await dbConnect();
 
@@ -22,7 +23,7 @@ export async function resumeValidCheck(profileId, jobLink, jobDescription, compa
   const role = normalizeText(position);
 
   const profileObjectId = mongoose.Types.ObjectId.isValid(profileId) ? new mongoose.Types.ObjectId(profileId) : profileId;
-  
+
   const existingResumes = await resumeModel
     .find({
       associatedProfileId: profileObjectId,

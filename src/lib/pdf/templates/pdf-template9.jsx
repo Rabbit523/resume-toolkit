@@ -52,7 +52,7 @@ function joinContact(d) {
   return parts.join('  |  ');
 }
 
-export async function generate_template5_pdf(data) {
+export async function generate_template9_pdf(data) {
   const engine = new ResumePDFEngine({
     fontsize: {
       name: 26,

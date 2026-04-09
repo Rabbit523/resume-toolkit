@@ -274,3 +274,29 @@ export function normalizeUrl(url) {
   // Otherwise add https://
   return 'https://' + url;
 }
+
+export function sanitizeJobDescription(jobDescription) {
+  if (!jobDescription) return '';
+
+  const suspiciousPatterns = [
+    /for ai generated resumes/i,
+    /for ai resumes/i,
+    /include the words?/i,
+    /include .* in your submission/i,
+    /secret word/i,
+    /hidden instruction/i,
+    /ignore previous instructions/i,
+    /respond with/i,
+    /use the phrase/i,
+    /mention the word/i
+  ];
+
+  return jobDescription
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      return !suspiciousPatterns.some((pattern) => pattern.test(line));
+    })
+    .join('\n');
+}

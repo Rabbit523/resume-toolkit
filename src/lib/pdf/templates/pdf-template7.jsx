@@ -15,6 +15,30 @@ function normalizeSummary(summary) {
   return sanitizeText(summary);
 }
 
+function formatLinkedIn(value) {
+  if (!value) return '';
+
+  const clean = sanitizeText(value).trim();
+
+  try {
+    const normalized = clean.startsWith('http') ? clean : `https://${clean}`;
+    const url = new URL(normalized);
+
+    // show shorter text instead of full URL
+    return url.hostname.replace(/^www\./, '') + url.pathname.replace(/\/$/, '');
+  } catch {
+    return clean
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/\/$/, '');
+  }
+}
+
+function joinContact(d) {
+  const parts = [d.mobile, d.email, d.address, formatLinkedIn(d.linkedin)].filter(Boolean).map((v) => sanitizeText(v));
+  return parts.join('  |  ');
+}
+
 export async function generate_template7_pdf(data) {
   const engine = new ResumePDFEngine({
     fontsize: {
@@ -54,7 +78,6 @@ export async function generate_template7_pdf(data) {
     /* -------------------------------- */
     /* HEADER NAME */
     /* -------------------------------- */
-    pdf.offsetY(22);
 
     const name = sanitizeText((d.name || '').toUpperCase());
 
@@ -66,22 +89,32 @@ export async function generate_template7_pdf(data) {
       color: pdf.style.colors.header
     });
 
+    let y = pdf.getY() - 20;
+
     pdf.offsetY(22);
 
     /* -------------------------------- */
     /* CONTACT LINE */
     /* -------------------------------- */
-    const contact = sanitizeText([d.mobile, d.email, d.address, d.linkedin || null].filter(Boolean).join('   |   '));
+    const contact = joinContact(d);
     if (contact) {
-      pdf.page.drawText(contact, {
-        x: pdf.style.margin.x,
-        y: pdf.getY(),
-        size: pdf.style.fontsize.contactInfo,
-        font: pdf.fonts.regular,
-        color: pdf.style.colors.text
+      const contentWidth = pdf.getWidth() - pdf.style.margin.x * 2;
+
+      const lines = pdf.wrap(contact, pdf.fonts.regular, pdf.style.fontsize.contactInfo, contentWidth);
+
+      lines.forEach((line) => {
+        pdf.page.drawText(line, {
+          x: pdf.style.margin.x,
+          y,
+          size: pdf.style.fontsize.contactInfo,
+          font: pdf.fonts.regular,
+          color: pdf.style.colors.primary
+        });
+
+        y -= pdf.style.lineHeight;
       });
 
-      pdf.offsetY(24);
+      y -= 6; // small spacing after contact
     }
 
     /* -------------------------------- */
@@ -114,7 +147,7 @@ export async function generate_template7_pdf(data) {
     /* -------------------------------- */
     /* SUMMARY */
     /* -------------------------------- */
-    pdf.offsetY(16);
+    pdf.offsetY(45);
     const summaryText = normalizeSummary(d.summary);
     if (summaryText) {
       drawSection('Professional Summary');
@@ -244,15 +277,30 @@ export async function generate_template7_pdf(data) {
     /* -------------------------------- */
     pdf.offsetY(20);
     if (d.technical_skills) {
-      drawSection('Technical Skills');
+      const technicalSkills = Object.entries(d.technical_skills)
+        .map(([cat, items]) => {
+          if (!Array.isArray(items)) return null;
 
-      Object.entries(d.technical_skills).forEach(([cat, items]) => {
-        if (!Array.isArray(items)) return;
+          const safeItems = items.filter((i) => typeof i === 'string' && i.trim().length > 0);
 
-        const safeItems = items.filter((i) => typeof i === 'string' && i.trim().length > 0).join(', ');
+          if (safeItems.length === 0) return null;
 
-        pdf.drawTextBlock(`${sanitizeText(cat)}: ${safeItems}`, pdf.style.fontsize.skills, pdf.fonts.regular, pdf.style.colors.text);
-      });
+          return [cat, safeItems];
+        })
+        .filter(Boolean);
+
+      if (technicalSkills.length > 0) {
+        drawSection('Technical Skills');
+
+        technicalSkills.forEach(([cat, items]) => {
+          pdf.drawTextBlock(
+            `${sanitizeText(cat)}: ${items.join(', ')}`,
+            pdf.style.fontsize.skills,
+            pdf.fonts.regular,
+            pdf.style.colors.text
+          );
+        });
+      }
     }
   });
 }

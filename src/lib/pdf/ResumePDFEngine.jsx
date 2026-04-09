@@ -161,7 +161,7 @@ export class ResumePDFEngine {
 
   drawBullets(items, size, font) {
     const maxWidth = this.page.getSize().width - this.style.margin.x * 2 - (this.style.indents.bullet + this.style.indents.hypen);
-    
+
     if (typeof items === 'string') {
       const wrappedLines = this.wrap(items, font, size, maxWidth);
       wrappedLines.forEach((line) => {
@@ -430,48 +430,42 @@ export class ResumePDFEngine {
     if (!items || (Array.isArray(items) && items.length === 0)) return;
 
     const { margin, indents, lineHeight } = this.style;
-    const bulletIndent = indents.bullet + indents.hypen;
-    const pageWidth = this.page.getSize().width;
-    const maxWidth = pageWidth - margin.x * 2 - bulletIndent;
-    const xStart = margin.x + bulletIndent;
+    const bulletGap = 10;
+    const bulletX = margin.x + indents.bullet;
+    const textX = bulletX + bulletGap;
+    const maxWidth = this.page.getSize().width - margin.x * 2 - bulletGap - indents.bullet;
 
-    // Normalize input
     const list = typeof items === 'string' ? [items] : items;
-    const useBullets = list.length > 1;
 
-    for (const item of list) {
-      const bullet = useBullets ? '•\t' : '';
-      const text = bullet + item;
-      const wrappedLines = this.wrap(text, font, size, maxWidth);
+    for (const rawItem of list) {
+      const item = sanitizeText(String(rawItem)).replace(/\s+/g, ' ').trim();
+      if (!item) continue;
 
-      for (let i = 0; i < wrappedLines.length; i++) {
+      const lines = this.wrap(item, font, size, maxWidth);
+
+      lines.forEach((line, index) => {
         this.ensureSpace();
-        const line = wrappedLines[i];
-        const isLastLine = i === wrappedLines.length - 1;
 
-        // Last line → left aligned
-        if (isLastLine) {
-          this.page.drawText(line, { x: xStart, y: this.y, size, font });
-          this.offsetY(lineHeight);
-          continue;
+        if (index === 0 && list.length > 1) {
+          this.page.drawText('•', {
+            x: bulletX,
+            y: this.y,
+            size,
+            font
+          });
         }
 
-        // Justified line
-        const { words, spaceSize } = this.justifyLine(line, maxWidth, size, font);
-        let cursorX = xStart;
-
-        for (let w = 0; w < words.length; w++) {
-          const word = words[w];
-          this.page.drawText(word, { x: cursorX, y: this.y, size, font });
-          cursorX += font.widthOfTextAtSize(word, size);
-          if (w < words.length - 1) cursorX += spaceSize;
-        }
+        this.page.drawText(line, {
+          x: textX,
+          y: this.y,
+          size,
+          font
+        });
 
         this.offsetY(lineHeight);
-      }
+      });
     }
 
-    // Extra spacing after bullet lists
     if (Array.isArray(items)) {
       this.offsetY(4);
     }
